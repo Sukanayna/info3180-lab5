@@ -5,8 +5,15 @@ Werkzeug Documentation:  https://werkzeug.palletsprojects.com/
 This file creates your application.
 """
 
+from email import errors
+
 from app import app
-from flask import render_template, request, jsonify, send_file
+from flask import render_template, request, jsonify, send_file, send_from_directory, url_for, allowed_file
+from werkzeug.utils import secure_filename
+from .forms import MovieForm
+from .models import Movie
+from . import db, app, csrf
+from flask_wtf.csrf import generate_csrf
 import os
 
 
@@ -56,6 +63,30 @@ def add_header(response):
     response.headers['Cache-Control'] = 'public, max-age=0'
     return response
 
+@app.route('/api/v1/movies', methods=['POST'])
+def add_movie():
+    form = MovieForm()
+
+    if form.validate_on_submit():
+        if 'poster' not in request.files:
+            return jsonify({"error": "No poster file provided."}), 400
+        file = request.files['poster']
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            file.save(os.path.join(['UPLOAD_FOLDER'], filename))
+        else:
+            return jsonify({"error": "Invalid file type. Only jpg, jpeg, png allowed."}), 400
+        
+        new_movie = Movie(
+            title=form.title.data,
+            description=form.description.data,
+            poster=filename
+        )
+        db.session.add(new_movie)
+        db.session.commit()
+
+        return jsonify({"message": "Movie successfully added",  "title": new_movie.title, "poster": filename,"description": new_movie.description}), 201
+    return jsonify({"errors": form_errors(form)}), 400
 
 @app.errorhandler(404)
 def page_not_found(error):
