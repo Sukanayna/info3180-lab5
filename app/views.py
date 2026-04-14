@@ -8,7 +8,7 @@ This file creates your application.
 from email import errors
 
 from app import app
-from flask import render_template, request, jsonify, send_file, send_from_directory, url_for, allowed_file
+from flask import render_template, request, jsonify, send_file, send_from_directory, url_for
 from werkzeug.utils import secure_filename
 from .forms import MovieForm
 from .models import Movie
@@ -24,6 +24,63 @@ import os
 @app.route('/')
 def index():
     return jsonify(message="This is the beginning of our API")
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ['jpg', 'jpeg', 'png']
+
+@app.route('/api/v1/movies', methods=['POST'])
+def add_movie():
+    form = MovieForm()
+    app.logger.debug(request.form['title'])
+
+    if form.validate_on_submit():
+        if 'poster' not in request.files:
+            return jsonify({"error": "No poster file provided."}), 400
+        file = request.files['poster']
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            upload_folder = app.config['UPLOAD_FOLDER']
+            if not os.path.exists(upload_folder):
+                os.umask(0)
+                os.makedirs(upload_folder, mode=0o777)
+            file.save(upload_folder)
+        else:
+            return jsonify({"error": "Invalid file type. Only jpg, jpeg, png allowed."}), 400
+        
+        movie = Movie(
+            title=form.title.data,
+            description=form.description.data,
+            poster=filename
+        )
+        db.session.add(movie)
+        db.session.commit()
+
+        return jsonify({"message": "Movie successfully added",  "title": movie.title, "poster": filename,"description": movie.description}), 201
+    return jsonify({"errors": form_errors(form)}), 400
+
+@app.route('/api/v1/movies', methods=['GET'])
+def get_movies():
+    movies = Movie.query.all()
+    movies_list = []
+    for movie in movies:
+        movies_list.append({
+            "id": movie.id,
+            "title": movie.title,
+            "description": movie.description,
+            "poster": f'/api/v1/posters/{movie.poster_filename}'
+        })
+    return jsonify(movies_list)
+
+@app.route('/api/v1/posters/<filename>', methods=['GET'])
+def get_poster(filename):
+    app.logger.debug(filename)
+    return send_from_directory(os.path.join(os.getcwd(), app.config['UPLOAD_FOLDER']), filename)
+
+@app.route('/api/v1/csrf-token', methods=['GET'])
+def getCSRFToken():
+    token = generate_csrf()
+    return jsonify({'csrf_token': token})
+
 
 
 ###
@@ -63,32 +120,8 @@ def add_header(response):
     response.headers['Cache-Control'] = 'public, max-age=0'
     return response
 
-@app.route('/api/v1/movies', methods=['POST'])
-def add_movie():
-    form = MovieForm()
-
-    if form.validate_on_submit():
-        if 'poster' not in request.files:
-            return jsonify({"error": "No poster file provided."}), 400
-        file = request.files['poster']
-        if file and allowed_file(file.filename):
-            filename = secure_filename(file.filename)
-            file.save(os.path.join(['UPLOAD_FOLDER'], filename))
-        else:
-            return jsonify({"error": "Invalid file type. Only jpg, jpeg, png allowed."}), 400
-        
-        new_movie = Movie(
-            title=form.title.data,
-            description=form.description.data,
-            poster=filename
-        )
-        db.session.add(new_movie)
-        db.session.commit()
-
-        return jsonify({"message": "Movie successfully added",  "title": new_movie.title, "poster": filename,"description": new_movie.description}), 201
-    return jsonify({"errors": form_errors(form)}), 400
-
 @app.errorhandler(404)
 def page_not_found(error):
     """Custom 404 page."""
-    return render_template('404.html'), 404
+    return jsonify({"Error": "error"}), 400
+    #return render_template('404.html'), 404

@@ -1,5 +1,5 @@
 # Add any form classes for Flask-WTF 
-from forms import FlaskForm
+from flask_wtf import FlaskForm
 from wtforms import StringField, TextAreaField, FileField
 from wtforms.validators import DataRequired, Length, Regexp
 from flask_wtf.file import FileAllowed, FileRequired
